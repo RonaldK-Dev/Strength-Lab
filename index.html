@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Strength-Lab" />
+  <meta name="theme-color" content="#0c0e10" />
+  <title>Strength-Lab</title>
+  <link rel="preload" href="fonts/dm-sans-latin.woff2" as="font" type="font/woff2" crossorigin />
+  <link rel="manifest" href="manifest.json" />
+  <link rel="icon" type="image/svg+xml" href="icon.svg" />
+  <link rel="apple-touch-icon" href="icon-192.png" />
+  <style>
+    /* Fonts lokal (SIL Open Font License), keine Fremd-CDNs. */
+    @font-face{font-family:'Bebas Neue';font-style:normal;font-weight:400;font-display:swap;src:url(fonts/bebas-neue-latin.woff2) format('woff2');unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
+    @font-face{font-family:'Bebas Neue';font-style:normal;font-weight:400;font-display:swap;src:url(fonts/bebas-neue-latin-ext.woff2) format('woff2');unicode-range:U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF}
+    @font-face{font-family:'DM Sans';font-style:normal;font-weight:300 600;font-display:swap;src:url(fonts/dm-sans-latin.woff2) format('woff2');unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
+    @font-face{font-family:'DM Sans';font-style:normal;font-weight:300 600;font-display:swap;src:url(fonts/dm-sans-latin-ext.woff2) format('woff2');unicode-range:U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF}
+
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    :root{
+      --bg:#0c0e10; --surface:#16191d; --surface2:#1d2126; --border:#2a2f36;
+      --accent:#a3e635; --accent-dim:#77a828; --danger:#f87171;
+      --text:#eef1f4; --muted:#8b939e;
+    }
+    html{background:var(--bg)}
+    body{background:var(--bg);color:var(--text);font-family:'DM Sans',system-ui,sans-serif;
+      overscroll-behavior:none;-webkit-tap-highlight-color:transparent;line-height:1.45}
+    #root{max-width:480px;margin:0 auto;min-height:100dvh;padding-bottom:calc(72px + env(safe-area-inset-bottom))}
+
+    .header{padding:max(env(safe-area-inset-top),24px) 20px 12px}
+    .header h1{font-family:'Bebas Neue',sans-serif;font-size:2.4rem;letter-spacing:.04em;font-weight:400}
+    .header-sm h1{font-size:1.9rem}
+    .header .sub{color:var(--muted);margin-top:2px}
+    .accent{color:var(--accent)}
+    .content{padding:0 14px}
+
+    .card{background:var(--surface);border:1px solid var(--border);border-radius:14px;
+      padding:16px;margin:0 0 12px}
+    .card-accent{border-color:var(--accent-dim)}
+    .card h2{font-family:'Bebas Neue',sans-serif;font-weight:400;font-size:1.35rem;letter-spacing:.03em;margin-bottom:8px}
+    .card h3{font-size:1.02rem;font-weight:600;margin-bottom:4px}
+    .card h3 a{color:var(--text);text-decoration:none;border-bottom:1px dotted var(--muted)}
+    .row-between{display:flex;justify-content:space-between;align-items:center;gap:8px}
+
+    label{display:block;font-size:.85rem;color:var(--muted);margin:10px 0 4px}
+    input,select{width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);
+      border-radius:10px;padding:11px 12px;font-size:1rem;font-family:inherit}
+    input:focus,select:focus{outline:none;border-color:var(--accent-dim)}
+
+    .btn{display:block;width:100%;border:none;border-radius:12px;padding:13px;margin-top:10px;
+      font-size:1rem;font-weight:600;font-family:inherit;cursor:pointer;transition:opacity .15s}
+    .btn:active{opacity:.75}
+    .btn-primary{background:var(--accent);color:#111}
+    .btn-ghost{background:transparent;color:var(--muted);border:1px solid var(--border)}
+    .btn-big{padding:16px;font-size:1.08rem}
+    .btn-sm{padding:9px;font-size:.9rem;margin-top:6px}
+
+    .chips{display:flex;flex-wrap:wrap;gap:8px}
+    .chips-scroll{flex-wrap:nowrap;overflow-x:auto;padding-bottom:4px;margin-top:10px}
+    .chip{background:var(--surface2);border:1px solid var(--border);color:var(--muted);
+      border-radius:999px;padding:8px 14px;font-size:.9rem;font-family:inherit;cursor:pointer;white-space:nowrap}
+    .chip-on{background:var(--accent);border-color:var(--accent);color:#111;font-weight:600}
+
+    .badge{background:var(--surface2);border:1px solid var(--accent-dim);color:var(--accent);
+      border-radius:999px;padding:3px 10px;font-size:.78rem;white-space:nowrap}
+    .badge-deload{border-color:#eab308;color:#eab308}
+    .badge-sm{font-size:.7rem;padding:1px 7px;border-color:var(--border);color:var(--muted)}
+
+    .muted{color:var(--muted)} .small{font-size:.85rem}
+    .list{list-style:none} .list li{padding:7px 0;border-bottom:1px solid var(--border)}
+    .list li:last-child{border-bottom:none}
+    .list a,.link{color:var(--text);text-decoration:none}
+    .link{color:var(--accent);font-size:.9rem;display:inline-block;margin-top:8px}
+    .ex-preview{list-style:none;margin:8px 0}
+    .ex-preview li{padding:4px 0;font-size:.95rem}
+
+    .rec{background:var(--surface2);border-radius:10px;padding:9px 12px;margin:8px 0;font-size:.95rem}
+    .rec strong{color:var(--accent)}
+    .setlist{list-style:none;margin:6px 0}
+    .setlist li{padding:5px 0;font-size:.95rem}
+    .setrow{display:grid;grid-template-columns:1fr 1fr 1.1fr 52px;gap:7px;margin-top:8px}
+    .setrow input,.setrow select{padding:11px 8px;text-align:center}
+    .btn-set{margin-top:0;padding:0;font-size:1.2rem}
+    .timer{font-family:'Bebas Neue',sans-serif;font-size:1.7rem;color:var(--accent);min-width:64px;text-align:right}
+    .other-days{margin-top:8px}
+    .other-days summary{cursor:pointer;padding:4px 0}
+
+    details.card summary{cursor:pointer}
+    .hist-ex{margin:10px 0 0;font-size:.9rem;color:var(--muted)}
+    .hist-ex strong{color:var(--text)}
+    .instructions{margin-left:18px}
+    .instructions li{margin-bottom:8px;font-size:.93rem;color:#c9cfd6}
+
+    .chart{width:100%;height:auto;margin-top:8px}
+    .ch-line{fill:none;stroke:var(--accent);stroke-width:2.5;stroke-linejoin:round}
+    .ch-dot{fill:var(--accent)}
+    .ch-bar{fill:var(--accent-dim)}
+    .ch-label{fill:var(--muted);font-size:11px}
+    .ch-tick{fill:var(--muted);font-size:10px}
+
+    .nav{position:fixed;bottom:0;left:0;right:0;display:flex;background:rgba(18,21,24,.96);
+      backdrop-filter:blur(10px);border-top:1px solid var(--border);
+      padding:6px 0 max(env(safe-area-inset-bottom),8px);z-index:10}
+    .nav a{flex:1;text-align:center;color:var(--muted);text-decoration:none;font-size:.72rem;padding:4px 0}
+    .nav a.active{color:var(--accent)}
+    .nav-ico{display:block;font-size:1.25rem;line-height:1.2}
+    @media(min-width:500px){.nav{max-width:480px;margin:0 auto;border-left:1px solid var(--border);border-right:1px solid var(--border)}}
+
+    .toast{position:fixed;bottom:90px;left:50%;transform:translateX(-50%) translateY(16px);
+      background:var(--surface2);border:1px solid var(--accent-dim);color:var(--text);
+      border-radius:10px;padding:10px 18px;font-size:.92rem;opacity:0;transition:all .25s;z-index:99;
+      max-width:88vw;text-align:center}
+    .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+    .toast-err{border-color:var(--danger)}
+    .footer-note{text-align:center;color:var(--muted);font-size:.75rem;padding:20px}
+  </style>
+</head>
+<body>
+  <div id="root">
+    <div class="header"><h1>Strength<span class="accent">Lab</span></h1>
+    <p class="sub">Lade …</p></div>
+  </div>
+  <script src="vendor/supabase-js-2.111.0.min.js"></script>
+  <script src="js/algorithm.js"></script>
+  <script src="js/generator.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

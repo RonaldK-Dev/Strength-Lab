@@ -7,7 +7,7 @@
   var SUPABASE_URL = 'https://hrmkpwiwdmsuosdyehwq.supabase.co';
   /* Publishable Key: darf öffentlich sein, Sicherheit kommt aus RLS. */
   var SUPABASE_KEY = 'sb_publishable_noGwk7sJrpok8MsGgiFcLQ_YKeNK5wV';
-  var VERSION = '1.1.0';
+  var VERSION = '1.2.0';
 
   var sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
     auth: { persistSession: true, autoRefreshToken: true }
@@ -310,8 +310,13 @@
       opt('deload', 'true', 'Mit Deload-Woche', String(g.deload)) +
       opt('deload', 'false', 'Ohne Deload', String(g.deload)) +
       '</div></div>' +
-      '<button class="btn btn-primary btn-big" onclick="App.genRun()">Plan erstellen</button>';
+      '<button class="btn btn-primary btn-big" onclick="App.genRun()">Plan erstellen</button>' +
+      '<button class="btn btn-ghost" onclick="App.genCancel()">Abbrechen</button>';
     shell('Plan-Generator', html, '#plan');
+  }
+
+  function genCancel() {
+    go(S.plan ? '#plan' : '#home');
   }
 
   function genSet(name, val) {
@@ -354,6 +359,44 @@
   }
 
   /* ---------- Plan-Ansicht ---------- */
+
+  /* Tausch-Zustand: welche Übung gerade zum Tauschen aufgeklappt ist. */
+  var SWAP = { day: -1, ex: -1, q: '' };
+
+  /* Alternativen für einen Slot: erst der kuratierte Pool (Equipment-
+     gefiltert, ohne bereits im Tag verwendete Übungen), dazu freie Suche
+     über die komplette Bibliothek. */
+  function swapCandidates(dayIdx, exIdx) {
+    var p = S.plan.data;
+    var day = p.days[dayIdx];
+    var pe = day.exercises[exIdx];
+    var usedInDay = {};
+    day.exercises.forEach(function (e, i) { if (i !== exIdx) usedInDay[e.exerciseId] = 1; });
+    var allowed = p.equipment && p.equipment.length ? p.equipment : SLGen.EQUIPMENT_TAGS;
+
+    var pool = (SLGen.POOLS[pe.slot] || []).filter(function (id) {
+      var ex = S.byId[id];
+      return ex && id !== pe.exerciseId && !usedInDay[id] && allowed.indexOf(ex.equipment) !== -1;
+    });
+    // Pool-Kandidaten ohne Equipment-Treffer trotzdem anbieten (gekennzeichnet),
+    // damit der Slot nie ohne Alternativen dasteht.
+    var poolAny = (SLGen.POOLS[pe.slot] || []).filter(function (id) {
+      var ex = S.byId[id];
+      return ex && id !== pe.exerciseId && !usedInDay[id] && pool.indexOf(id) === -1;
+    });
+
+    var search = [];
+    if (SWAP.q && SWAP.q.length >= 2) {
+      var q = SWAP.q.toLowerCase();
+      search = S.exercises.filter(function (ex) {
+        if (ex.id === pe.exerciseId || usedInDay[ex.id]) return false;
+        var hit = ex.name.toLowerCase().indexOf(q) !== -1 || (ex.de && ex.de.toLowerCase().indexOf(q) !== -1);
+        return hit;
+      }).slice(0, 10).map(function (ex) { return ex.id; });
+    }
+    return { pool: pool, poolAny: poolAny, search: search };
+  }
+
   function viewPlan() {
     if (!S.plan) return viewGenerator();
     var p = S.plan.data;
@@ -365,16 +408,96 @@
       '<p class="muted small">' + (p.goal === 'strength' ? 'Maximalkraft' : 'Muskelaufbau') +
       ' · ' + esc(equipList) + (p.deload ? ' · Deload in Woche ' + p.mesoWeeks : '') + '</p>' +
       (focusList ? '<p class="muted small">Fokus: ' + esc(focusList) + '</p>' : '') + '</div>';
+
     p.days.forEach(function (d, i) {
       html += '<div class="card"><h3>' + esc(d.name) + (i === slot.dayIndex ? ' <span class="badge">nächster</span>' : '') + '</h3>' +
-        '<ul class="list">' + d.exercises.map(function (pe) {
-          return '<li><a href="#exercise/' + encodeURIComponent(pe.exerciseId) + '">' + esc(exName(pe.exerciseId)) + '</a>' +
-            '<span class="muted"> · ' + pe.sets + '×' + pe.repLo + '–' + pe.repHi +
-            (pe.compound ? ' · Grundübung' : '') + '</span></li>';
+        '<ul class="list">' + d.exercises.map(function (pe, j) {
+          var row = '<li><div class="row-between"><span>' +
+            '<a href="#exercise/' + encodeURIComponent(pe.exerciseId) + '">' + esc(exName(pe.exerciseId)) + '</a>' +
+            '<span class="muted small"> · ' + pe.sets + '×' + pe.repLo + '–' + pe.repHi + '</span></span>' +
+            '<button class="swap-btn" title="Übung tauschen" onclick="App.swapOpen(' + i + ',' + j + ')">⇄</button></div>';
+
+          if (SWAP.day === i && SWAP.ex === j) {
+            var cand = swapCandidates(i, j);
+            row += '<div class="swap-panel">';
+            if (cand.pool.length || cand.poolAny.length) {
+              row += '<p class="muted small">Passende Alternativen:</p>' +
+                cand.pool.map(function (id) {
+                  return '<button class="btn btn-ghost btn-sm" onclick="App.swapPick(' + i + ',' + j + ',\'' + id + '\')">' +
+                    esc(exName(id)) + ' <span class="muted small">(' + esc(EQUIP_DE[S.byId[id].equipment] || '') + ')</span></button>';
+                }).join('') +
+                cand.poolAny.map(function (id) {
+                  return '<button class="btn btn-ghost btn-sm" onclick="App.swapPick(' + i + ',' + j + ',\'' + id + '\')">' +
+                    esc(exName(id)) + ' <span class="muted small">(' + esc(EQUIP_DE[S.byId[id].equipment] || '') + ' – nicht in deiner Auswahl)</span></button>';
+                }).join('');
+            }
+            row += '<input type="search" placeholder="Oder ganze Bibliothek durchsuchen …" value="' + esc(SWAP.q) + '" ' +
+              'oninput="App.swapSearch(this.value)">' +
+              (cand.search.length
+                ? cand.search.map(function (id) {
+                    return '<button class="btn btn-ghost btn-sm" onclick="App.swapPick(' + i + ',' + j + ',\'' + id + '\')">' +
+                      esc(exName(id)) + ' <span class="muted small">(' + esc(EQUIP_DE[S.byId[id].equipment] || S.byId[id].equipment) + ')</span></button>';
+                  }).join('')
+                : (SWAP.q.length >= 2 ? '<p class="muted small">Keine Treffer.</p>' : '')) +
+              '<button class="btn btn-ghost btn-sm" onclick="App.swapClose()">Schließen</button>' +
+              '</div>';
+          }
+          return row + '</li>';
         }).join('') + '</ul></div>';
     });
-    html += '<button class="btn btn-ghost" onclick="location.hash=\'#generator\'">Neuen Plan generieren</button>';
+
+    html += '<button class="btn btn-ghost" onclick="location.hash=\'#generator\'">Neuen Plan generieren</button>' +
+      '<button class="btn btn-danger" onclick="App.deletePlan()">Plan löschen</button>';
     shell('Trainingsplan', html, '#plan');
+  }
+
+  function swapOpen(dayIdx, exIdx) {
+    if (SWAP.day === dayIdx && SWAP.ex === exIdx) { return swapClose(); }
+    SWAP = { day: dayIdx, ex: exIdx, q: '' };
+    viewPlan();
+  }
+  function swapClose() {
+    SWAP = { day: -1, ex: -1, q: '' };
+    viewPlan();
+  }
+  var swapTimeout = null;
+  function swapSearch(q) {
+    SWAP.q = q;
+    clearTimeout(swapTimeout);
+    swapTimeout = setTimeout(function () {
+      var scroll = window.scrollY;
+      viewPlan();
+      var inp = document.querySelector('.swap-panel input[type=search]');
+      if (inp) { inp.focus(); inp.setSelectionRange(inp.value.length, inp.value.length); }
+      window.scrollTo(0, scroll);
+    }, 250);
+  }
+
+  function swapPick(dayIdx, exIdx, newId) {
+    var ex = S.byId[newId];
+    if (!ex) return;
+    var p = S.plan.data;
+    var pe = p.days[dayIdx].exercises[exIdx];
+    var oldName = exName(pe.exerciseId);
+    pe.exerciseId = newId;
+    sb.from('plans').update({ data: p }).eq('id', S.plan.id).then(function (res) {
+      if (res.error) return toast('Speichern fehlgeschlagen: ' + res.error.message, true);
+      toast(oldName + ' → ' + exName(newId));
+      SWAP = { day: -1, ex: -1, q: '' };
+      viewPlan();
+    });
+  }
+
+  function deletePlan() {
+    if (!S.plan) return;
+    if (!confirm('Plan "' + S.plan.name + '" wirklich löschen?\nDeine Workout-Historie bleibt erhalten.')) return;
+    sb.from('plans').delete().eq('id', S.plan.id).then(function (res) {
+      if (res.error) return toast('Löschen fehlgeschlagen: ' + res.error.message, true);
+      toast('Plan gelöscht');
+      S.plan = null;
+      S.planWorkouts = [];
+      return loadActivePlan().then(function () { go('#home'); viewHome(); });
+    });
   }
 
   /* ---------- Workout ---------- */
@@ -868,7 +991,9 @@
 
   window.App = {
     login: login, register: register, logout: logout,
-    genSet: genSet, genToggle: genToggle, genRun: genRun,
+    genSet: genSet, genToggle: genToggle, genRun: genRun, genCancel: genCancel,
+    swapOpen: swapOpen, swapClose: swapClose, swapSearch: swapSearch, swapPick: swapPick,
+    deletePlan: deletePlan,
     startWorkout: startWorkout, resumeWorkout: resumeWorkout, discardWorkout: discardWorkout,
     logSet: logSet, finishWorkout: finishWorkout,
     progressPick: progressPick, libSearch: libSearch, libMuscle: libMuscle,

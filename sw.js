@@ -1,6 +1,6 @@
 /* Strength-Lab Service Worker: App-Shell offline verfügbar machen.
    Cache-Version bei jedem Release erhöhen, damit Clients aktualisieren. */
-var CACHE = 'strength-lab-v1.0.0';
+var CACHE = 'strength-lab-v1.1.0';
 var ASSETS = [
   './',
   'index.html',

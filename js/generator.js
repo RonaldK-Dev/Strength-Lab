@@ -2,16 +2,14 @@
    Regelbasiert: Split-Vorlagen aus Bewegungsmuster-Slots, jeder Slot hat
    einen nach Präferenz geordneten Kandidaten-Pool aus der statischen
    Übungs-DB (data/exercises.json, Public Domain / free-exercise-db).
-   Gefiltert wird nach verfügbarem Equipment. Reine Funktionen, testbar. */
+   Equipment und Muskel-Fokus sind Mehrfachauswahlen. Reine Funktionen,
+   testbar. */
 (function (root) {
   'use strict';
 
-  /* Equipment-Profile: was steht zur Verfügung? */
-  var EQUIP_PROFILES = {
-    gym:     ['barbell', 'dumbbell', 'cable', 'machine', 'body only', 'e-z curl bar', 'kettlebells', 'bands'],
-    homegym: ['barbell', 'dumbbell', 'body only', 'e-z curl bar', 'kettlebells', 'bands'],
-    minimal: ['dumbbell', 'body only', 'bands', 'kettlebells']
-  };
+  /* Equipment-Tags, wie sie in der Übungs-DB stehen. Der Nutzer wählt eine
+     beliebige Teilmenge (Mehrfachauswahl) statt eines fixen Presets. */
+  var EQUIPMENT_TAGS = ['barbell', 'dumbbell', 'cable', 'machine', 'body only', 'kettlebells', 'bands', 'e-z curl bar'];
 
   /* Kandidaten-Pools je Bewegungsmuster, Reihenfolge = Präferenz.
      IDs stammen aus free-exercise-db und werden im Test gegen die
@@ -50,42 +48,68 @@
 
   var COMPOUND = { squat: 1, hinge: 1, bench: 1, incline: 1, vertPull: 1, horizPull: 1, ohp: 1, rdl: 1 };
 
-  /* Split-Vorlagen: Trainingstage als Slot-Listen. */
-  var SPLITS = {
-    1: { name: 'Ganzkörper', days: [
-      { name: 'Ganzkörper', slots: ['squat', 'bench', 'horizPull', 'ohp', 'rdl', 'biceps', 'triceps', 'abs'] }
-    ]},
-    2: { name: 'Ganzkörper A/B', days: [
-      { name: 'Ganzkörper A', slots: ['squat', 'bench', 'horizPull', 'sideDelts', 'biceps', 'abs'] },
-      { name: 'Ganzkörper B', slots: ['hinge', 'ohp', 'vertPull', 'legCurl', 'triceps', 'calves'] }
-    ]},
-    3: { name: 'Push / Pull / Beine', days: [
-      { name: 'Push', slots: ['bench', 'ohp', 'incline', 'sideDelts', 'triceps', 'tricepsOh'] },
-      { name: 'Pull', slots: ['hinge', 'vertPull', 'horizPull', 'rearDelts', 'biceps'] },
-      { name: 'Beine', slots: ['squat', 'rdl', 'legIso', 'glutes', 'calves', 'abs'] }
-    ]},
-    4: { name: 'Oberkörper / Unterkörper', days: [
-      { name: 'Oberkörper A', slots: ['bench', 'horizPull', 'ohp', 'sideDelts', 'biceps', 'triceps'] },
-      { name: 'Unterkörper A', slots: ['squat', 'rdl', 'legIso', 'calves', 'abs'] },
-      { name: 'Oberkörper B', slots: ['ohp', 'vertPull', 'incline', 'rearDelts', 'biceps', 'triceps'] },
-      { name: 'Unterkörper B', slots: ['hinge', 'legCurl', 'legIso', 'glutes', 'calves'] }
-    ]},
-    5: { name: 'PPL + Oberkörper/Unterkörper', days: [
-      { name: 'Push', slots: ['bench', 'ohp', 'incline', 'sideDelts', 'triceps'] },
-      { name: 'Pull', slots: ['hinge', 'vertPull', 'horizPull', 'rearDelts', 'biceps'] },
-      { name: 'Beine', slots: ['squat', 'rdl', 'legIso', 'glutes', 'calves'] },
-      { name: 'Oberkörper', slots: ['incline', 'horizPull', 'sideDelts', 'biceps', 'triceps'] },
-      { name: 'Unterkörper', slots: ['squat', 'legCurl', 'legIso', 'calves', 'abs'] }
-    ]},
-    6: { name: 'Push / Pull / Beine ×2', days: [
-      { name: 'Push A', slots: ['bench', 'ohp', 'sideDelts', 'triceps'] },
-      { name: 'Pull A', slots: ['hinge', 'vertPull', 'rearDelts', 'biceps'] },
-      { name: 'Beine A', slots: ['squat', 'rdl', 'calves', 'abs'] },
-      { name: 'Push B', slots: ['incline', 'ohp', 'chestIso', 'sideDelts', 'tricepsOh'] },
-      { name: 'Pull B', slots: ['horizPull', 'vertPull', 'rearDelts', 'biceps'] },
-      { name: 'Beine B', slots: ['legIso', 'legCurl', 'glutes', 'calves', 'abs'] }
-    ]}
+  /* Split-Varianten je Trainingstage/Woche. Mehrere Varianten pro
+     Tagesanzahl möglich (z.B. bei 3 Tagen: Push/Pull/Beine ODER
+     Ganzkörper) – der Nutzer wählt im Wizard, falls es mehr als eine gibt. */
+  var SPLIT_VARIANTS = {
+    1: [
+      { key: 'fullbody', name: 'Ganzkörper', days: [
+        { name: 'Ganzkörper', slots: ['squat', 'bench', 'horizPull', 'ohp', 'rdl', 'biceps', 'triceps', 'abs'] }
+      ]}
+    ],
+    2: [
+      { key: 'fullbody', name: 'Ganzkörper A/B', days: [
+        { name: 'Ganzkörper A', slots: ['squat', 'bench', 'horizPull', 'sideDelts', 'biceps', 'abs'] },
+        { name: 'Ganzkörper B', slots: ['hinge', 'ohp', 'vertPull', 'legCurl', 'triceps', 'calves'] }
+      ]}
+    ],
+    3: [
+      { key: 'ppl', name: 'Push / Pull / Beine', days: [
+        { name: 'Push', slots: ['bench', 'ohp', 'incline', 'sideDelts', 'triceps', 'tricepsOh'] },
+        { name: 'Pull', slots: ['hinge', 'vertPull', 'horizPull', 'rearDelts', 'biceps'] },
+        { name: 'Beine', slots: ['squat', 'rdl', 'legIso', 'glutes', 'calves', 'abs'] }
+      ]},
+      { key: 'fullbody', name: 'Ganzkörper A/B/C', days: [
+        { name: 'Ganzkörper A', slots: ['squat', 'bench', 'horizPull', 'sideDelts', 'biceps', 'abs'] },
+        { name: 'Ganzkörper B', slots: ['hinge', 'ohp', 'vertPull', 'triceps', 'calves'] },
+        { name: 'Ganzkörper C', slots: ['legIso', 'incline', 'horizPull', 'rearDelts', 'biceps', 'calves'] }
+      ]}
+    ],
+    4: [
+      { key: 'upperlower', name: 'Oberkörper / Unterkörper', days: [
+        { name: 'Oberkörper A', slots: ['bench', 'horizPull', 'ohp', 'sideDelts', 'biceps', 'triceps'] },
+        { name: 'Unterkörper A', slots: ['squat', 'rdl', 'legIso', 'calves', 'abs'] },
+        { name: 'Oberkörper B', slots: ['ohp', 'vertPull', 'incline', 'rearDelts', 'biceps', 'triceps'] },
+        { name: 'Unterkörper B', slots: ['hinge', 'legCurl', 'legIso', 'glutes', 'calves'] }
+      ]}
+    ],
+    5: [
+      { key: 'ppl-ul', name: 'PPL + Oberkörper/Unterkörper', days: [
+        { name: 'Push', slots: ['bench', 'ohp', 'incline', 'sideDelts', 'triceps'] },
+        { name: 'Pull', slots: ['hinge', 'vertPull', 'horizPull', 'rearDelts', 'biceps'] },
+        { name: 'Beine', slots: ['squat', 'rdl', 'legIso', 'glutes', 'calves'] },
+        { name: 'Oberkörper', slots: ['incline', 'horizPull', 'sideDelts', 'biceps', 'triceps'] },
+        { name: 'Unterkörper', slots: ['squat', 'legCurl', 'legIso', 'calves', 'abs'] }
+      ]}
+    ],
+    6: [
+      { key: 'ppl2', name: 'Push / Pull / Beine ×2', days: [
+        { name: 'Push A', slots: ['bench', 'ohp', 'sideDelts', 'triceps'] },
+        { name: 'Pull A', slots: ['hinge', 'vertPull', 'rearDelts', 'biceps'] },
+        { name: 'Beine A', slots: ['squat', 'rdl', 'calves', 'abs'] },
+        { name: 'Push B', slots: ['incline', 'ohp', 'chestIso', 'sideDelts', 'tricepsOh'] },
+        { name: 'Pull B', slots: ['horizPull', 'vertPull', 'rearDelts', 'biceps'] },
+        { name: 'Beine B', slots: ['legIso', 'legCurl', 'glutes', 'calves', 'abs'] }
+      ]}
+    ]
   };
+
+  function variantsFor(days) { return SPLIT_VARIANTS[days] || SPLIT_VARIANTS[3]; }
+  function getSplit(days, key) {
+    var list = variantsFor(days);
+    var found = key && list.filter(function (v) { return v.key === key; })[0];
+    return found || list[0];
+  }
 
   /* Fokus-Muskel -> zusätzlicher Isolations-Slot. */
   var FOCUS_EXTRA = {
@@ -93,41 +117,61 @@
     biceps: 'biceps', triceps: 'triceps', quads: 'legIso', hamstrings: 'legCurl',
     glutes: 'glutes', calves: 'calves', abs: 'abs'
   };
+  var MAX_FOCUS_EXTRAS_PER_DAY = 2; // Deckel gegen ausufernd lange Tage bei vielen Fokusmuskeln
 
+  /* Übung für einen Slot wählen. Erst bevorzugtes Equipment + unbenutzt,
+     dann bevorzugtes Equipment + Wiederholung, dann (Notlösung, falls die
+     Equipment-Auswahl des Nutzers eine ganze Bewegungskategorie ausschließt)
+     irgendein Equipment, damit kein Slot ganz leer bleibt. */
   function pickExercise(pool, byId, allowed, used) {
-    var fallback = null;
-    for (var i = 0; i < pool.length; i++) {
-      var ex = byId[pool[i]];
-      if (!ex) continue;
-      if (allowed.indexOf(ex.equipment) === -1) continue;
-      if (used[ex.id]) { if (!fallback) fallback = ex; continue; }
-      return ex;
+    var passes = [
+      function (ex) { return allowed.indexOf(ex.equipment) !== -1 && !used[ex.id]; },
+      function (ex) { return allowed.indexOf(ex.equipment) !== -1; },
+      function (ex) { return !used[ex.id]; },
+      function () { return true; }
+    ];
+    for (var p = 0; p < passes.length; p++) {
+      for (var i = 0; i < pool.length; i++) {
+        var ex = byId[pool[i]];
+        if (ex && passes[p](ex)) return ex;
+      }
     }
-    return fallback; // lieber doppelt als Lücke
+    return null;
   }
 
   /* generate(exercises, opts)
      opts: { goal: 'hypertrophy'|'strength', daysPerWeek: 1..6,
-             equipment: 'gym'|'homegym'|'minimal', focus: muskel|null,
+             splitKey: string|null, equipment: string[], focus: string[],
              mesoWeeks: 3..8, deload: bool }
+     equipment: Teilmenge von EQUIPMENT_TAGS (leer/undefined = alles erlaubt).
+     focus: Array von Muskelschlüsseln aus FOCUS_EXTRA (leer = kein Fokus).
      Rückgabe: Plan-Datenstruktur für plans.data (jsonb). */
   function generate(exercises, opts) {
     var byId = {};
     for (var i = 0; i < exercises.length; i++) byId[exercises[i].id] = exercises[i];
-    var allowed = EQUIP_PROFILES[opts.equipment] || EQUIP_PROFILES.gym;
-    var split = SPLITS[opts.daysPerWeek] || SPLITS[3];
+    var allowed = (opts.equipment && opts.equipment.length) ? opts.equipment : EQUIPMENT_TAGS;
+    var focus = opts.focus || [];
+    var split = getSplit(opts.daysPerWeek, opts.splitKey);
     var strength = opts.goal === 'strength';
 
     var days = [];
     for (var d = 0; d < split.days.length; d++) {
       var tpl = split.days[d];
       var slots = tpl.slots.slice();
-      // Fokus: Extra-Isolationsslot an passende Tage hängen (max 1x pro Tag).
-      if (opts.focus && FOCUS_EXTRA[opts.focus]) {
-        var extra = FOCUS_EXTRA[opts.focus];
-        var dayMuscles = slots.map(function (s) { return SLOT_MUSCLE[s]; });
-        if (dayMuscles.indexOf(opts.focus) !== -1 && slots.indexOf(extra) === -1) slots.push(extra);
+      var dayMuscles = slots.map(function (s) { return SLOT_MUSCLE[s]; });
+
+      // Fokus: pro zutreffendem Muskel einen Extra-Isolationsslot anhängen,
+      // gedeckelt damit der Tag nicht ausufert.
+      var extrasAdded = 0;
+      for (var f = 0; f < focus.length && extrasAdded < MAX_FOCUS_EXTRAS_PER_DAY; f++) {
+        var extra = FOCUS_EXTRA[focus[f]];
+        if (!extra) continue;
+        if (dayMuscles.indexOf(focus[f]) === -1) continue;
+        if (slots.indexOf(extra) !== -1) continue;
+        slots.push(extra);
+        extrasAdded++;
       }
+
       var used = {};
       var exList = [];
       for (var s = 0; s < slots.length; s++) {
@@ -140,8 +184,7 @@
         var repLo = strength && isCompound ? 3 : (isCompound ? 6 : 10);
         var repHi = strength && isCompound ? 6 : (isCompound ? 10 : 15);
         var sets = isCompound ? (strength ? 4 : 3) : (strength ? 2 : 3);
-        var focused = opts.focus && SLOT_MUSCLE[slot] === opts.focus;
-        if (focused) sets += 1;
+        if (focus.indexOf(SLOT_MUSCLE[slot]) !== -1) sets += 1;
         exList.push({
           exerciseId: ex.id, slot: slot, muscle: SLOT_MUSCLE[slot],
           sets: sets, repLo: repLo, repHi: repHi,
@@ -152,15 +195,16 @@
     }
 
     return {
-      splitName: split.name,
-      goal: opts.goal, equipment: opts.equipment, focus: opts.focus || null,
+      splitName: split.name, splitKey: split.key,
+      goal: opts.goal, equipment: allowed.slice(), focus: focus.slice(),
       mesoWeeks: opts.mesoWeeks, deload: !!opts.deload,
       days: days
     };
   }
 
-  var api = { generate: generate, POOLS: POOLS, SPLITS: SPLITS,
-              EQUIP_PROFILES: EQUIP_PROFILES, SLOT_MUSCLE: SLOT_MUSCLE,
+  var api = { generate: generate, POOLS: POOLS, SPLIT_VARIANTS: SPLIT_VARIANTS,
+              variantsFor: variantsFor, getSplit: getSplit,
+              EQUIPMENT_TAGS: EQUIPMENT_TAGS, SLOT_MUSCLE: SLOT_MUSCLE,
               FOCUS_EXTRA: FOCUS_EXTRA };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.SLGen = api;

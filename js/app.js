@@ -7,7 +7,7 @@
   var SUPABASE_URL = 'https://hrmkpwiwdmsuosdyehwq.supabase.co';
   /* Publishable Key: darf öffentlich sein, Sicherheit kommt aus RLS. */
   var SUPABASE_KEY = 'sb_publishable_noGwk7sJrpok8MsGgiFcLQ_YKeNK5wV';
-  var VERSION = '1.0.0';
+  var VERSION = '1.1.0';
 
   var sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
     auth: { persistSession: true, autoRefreshToken: true }
@@ -72,7 +72,20 @@
     var d = new Date(iso);
     return d.toLocaleDateString('de-AT', { weekday: 'short', day: '2-digit', month: '2-digit', year: '2-digit' });
   }
-  function exName(id) { return S.byId[id] ? S.byId[id].name : id; }
+  /* Deutscher Name mit Fallback aufs englische Original (bei ~8% der
+     593 Übungen konnte das Übersetzungs-Wörterbuch keinen sauberen
+     Kernbegriff erkennen). */
+  function exName(id) {
+    var ex = S.byId[id];
+    if (!ex) return id;
+    return ex.de || ex.name;
+  }
+  /* Anleitung: deutsch für die ~70 vom Plangenerator genutzten Übungen,
+     sonst englisches Original (mit Hinweis in der UI). */
+  function exInstructions(ex) {
+    if (ex.instructionsDe && ex.instructionsDe.length) return { steps: ex.instructionsDe, en: false };
+    return { steps: ex.instructions || [], en: true };
+  }
   function root() { return document.getElementById('root'); }
   function toast(msg, isError) {
     var t = document.createElement('div');
@@ -255,7 +268,11 @@
   }
 
   /* ---------- Plan-Generator (Wizard) ---------- */
-  var GEN_STATE = { goal: 'hypertrophy', days: 3, equipment: 'gym', focus: '', mesoWeeks: 5, deload: true };
+  var GEN_STATE = {
+    goal: 'hypertrophy', days: 3, splitKey: null,
+    equipment: SLGen.EQUIPMENT_TAGS.slice(), // Start: alles an – Nutzer deselektiert, was fehlt
+    focus: [], mesoWeeks: 5, deload: true
+  };
 
   function viewGenerator() {
     var g = GEN_STATE;
@@ -263,21 +280,29 @@
       return '<button class="chip' + (String(cur) === String(val) ? ' chip-on' : '') + '" ' +
         'onclick="App.genSet(\'' + name + '\',\'' + val + '\')">' + label + '</button>';
     }
+    function toggleChip(name, val, label, arr) {
+      var on = arr.indexOf(val) !== -1;
+      return '<button class="chip' + (on ? ' chip-on' : '') + '" ' +
+        'onclick="App.genToggle(\'' + name + '\',\'' + val + '\')">' + label + '</button>';
+    }
+    var variants = SLGen.variantsFor(g.days);
     var html =
       '<div class="card"><h2>Ziel</h2><div class="chips">' +
       opt('goal', 'hypertrophy', 'Muskelaufbau', g.goal) + opt('goal', 'strength', 'Maximalkraft', g.goal) +
       '</div></div>' +
       '<div class="card"><h2>Trainingstage pro Woche</h2><div class="chips">' +
       [1, 2, 3, 4, 5, 6].map(function (n) { return opt('days', n, String(n), g.days); }).join('') +
-      '</div><p class="muted small">' + esc((SLGen.SPLITS[g.days] || {}).name || '') + '</p></div>' +
-      '<div class="card"><h2>Equipment</h2><div class="chips">' +
-      opt('equipment', 'gym', 'Gym (alles)', g.equipment) +
-      opt('equipment', 'homegym', 'Homegym (Hanteln)', g.equipment) +
-      opt('equipment', 'minimal', 'Minimal (KH/Body)', g.equipment) +
       '</div></div>' +
-      '<div class="card"><h2>Muskel-Fokus <span class="muted small">(optional)</span></h2><div class="chips">' +
-      opt('focus', '', 'Kein Fokus', g.focus) +
-      Object.keys(MUSCLE_DE).map(function (m) { return opt('focus', m, MUSCLE_DE[m], g.focus); }).join('') +
+      (variants.length > 1
+        ? '<div class="card"><h2>Splits-Typ</h2><div class="chips">' +
+          variants.map(function (v) { return opt('splitKey', v.key, v.name, g.splitKey || variants[0].key); }).join('') +
+          '</div></div>'
+        : '<p class="muted small hint-split">' + esc(variants[0].name) + '</p>') +
+      '<div class="card"><h2>Equipment <span class="muted small">(was steht dir zur Verfügung?)</span></h2><div class="chips">' +
+      SLGen.EQUIPMENT_TAGS.map(function (tag) { return toggleChip('equipment', tag, EQUIP_DE[tag] || tag, g.equipment); }).join('') +
+      '</div></div>' +
+      '<div class="card"><h2>Muskel-Fokus <span class="muted small">(optional, Mehrfachauswahl)</span></h2><div class="chips">' +
+      Object.keys(MUSCLE_DE).map(function (m) { return toggleChip('focus', m, MUSCLE_DE[m], g.focus); }).join('') +
       '</div></div>' +
       '<div class="card"><h2>Zyklus</h2><div class="chips">' +
       [4, 5, 6, 8].map(function (n) { return opt('mesoWeeks', n, n + ' Wochen', g.mesoWeeks); }).join('') +
@@ -290,19 +315,28 @@
   }
 
   function genSet(name, val) {
-    if (name === 'days' || name === 'mesoWeeks') GEN_STATE[name] = parseInt(val, 10);
+    if (name === 'days') { GEN_STATE.days = parseInt(val, 10); GEN_STATE.splitKey = null; }
+    else if (name === 'mesoWeeks') GEN_STATE.mesoWeeks = parseInt(val, 10);
     else if (name === 'deload') GEN_STATE.deload = (val === 'true');
     else GEN_STATE[name] = val;
     viewGenerator();
   }
 
+  function genToggle(name, val) {
+    var arr = GEN_STATE[name];
+    var i = arr.indexOf(val);
+    if (i === -1) arr.push(val); else arr.splice(i, 1);
+    viewGenerator();
+  }
+
   function genRun() {
     var g = GEN_STATE;
+    if (!g.equipment.length) return toast('Bitte mindestens ein Equipment auswählen', true);
     var data = SLGen.generate(S.exercises, {
-      goal: g.goal, daysPerWeek: g.days, equipment: g.equipment,
-      focus: g.focus || null, mesoWeeks: g.mesoWeeks, deload: g.deload
+      goal: g.goal, daysPerWeek: g.days, splitKey: g.splitKey,
+      equipment: g.equipment, focus: g.focus, mesoWeeks: g.mesoWeeks, deload: g.deload
     });
-    var name = data.splitName + (g.focus ? ' · Fokus ' + MUSCLE_DE[g.focus] : '');
+    var name = data.splitName + (g.focus.length ? ' · Fokus ' + g.focus.map(function (m) { return MUSCLE_DE[m]; }).join(', ') : '');
     // Alten Plan deaktivieren, neuen speichern
     var deactivate = S.plan
       ? sb.from('plans').update({ active: false }).eq('id', S.plan.id)
@@ -324,10 +358,13 @@
     if (!S.plan) return viewGenerator();
     var p = S.plan.data;
     var slot = nextSlot();
+    var equipList = (p.equipment || []).map(function (t) { return EQUIP_DE[t] || t; }).join(', ');
+    var focusList = (p.focus || []).map(function (m) { return MUSCLE_DE[m] || m; }).join(', ');
     var html = '<div class="card"><div class="row-between"><h2>' + esc(S.plan.name) + '</h2>' +
       '<span class="badge">Woche ' + slot.week + '/' + p.mesoWeeks + '</span></div>' +
       '<p class="muted small">' + (p.goal === 'strength' ? 'Maximalkraft' : 'Muskelaufbau') +
-      ' · ' + esc(EQUIP_PROFILE_DE(p.equipment)) + (p.deload ? ' · Deload in Woche ' + p.mesoWeeks : '') + '</p></div>';
+      ' · ' + esc(equipList) + (p.deload ? ' · Deload in Woche ' + p.mesoWeeks : '') + '</p>' +
+      (focusList ? '<p class="muted small">Fokus: ' + esc(focusList) + '</p>' : '') + '</div>';
     p.days.forEach(function (d, i) {
       html += '<div class="card"><h3>' + esc(d.name) + (i === slot.dayIndex ? ' <span class="badge">nächster</span>' : '') + '</h3>' +
         '<ul class="list">' + d.exercises.map(function (pe) {
@@ -338,9 +375,6 @@
     });
     html += '<button class="btn btn-ghost" onclick="location.hash=\'#generator\'">Neuen Plan generieren</button>';
     shell('Trainingsplan', html, '#plan');
-  }
-  function EQUIP_PROFILE_DE(k) {
-    return { gym: 'Gym', homegym: 'Homegym', minimal: 'Minimal-Equipment' }[k] || k;
   }
 
   /* ---------- Workout ---------- */
@@ -688,7 +722,10 @@
       if (!hit) return false;
     }
     if (f.q) {
-      if (ex.name.toLowerCase().indexOf(f.q.toLowerCase()) === -1) return false;
+      var q = f.q.toLowerCase();
+      var hitName = ex.name.toLowerCase().indexOf(q) !== -1;
+      var hitDe = ex.de && ex.de.toLowerCase().indexOf(q) !== -1;
+      if (!hitName && !hitDe) return false;
     }
     return true;
   }
@@ -704,7 +741,7 @@
           'onclick="App.libMuscle(\'' + g[0] + '\')">' + g[1] + '</button>';
       }).join('') + '</div></div>' +
       '<div class="card"><ul class="list">' + (list.length ? list.map(function (ex) {
-        return '<li><a href="#exercise/' + encodeURIComponent(ex.id) + '">' + esc(ex.name) + '</a>' +
+        return '<li><a href="#exercise/' + encodeURIComponent(ex.id) + '">' + esc(exName(ex.id)) + '</a>' +
           '<span class="muted small"> · ' + esc(DB_MUSCLE_DE[ex.primaryMuscles[0]] || '') +
           ' · ' + esc(EQUIP_DE[ex.equipment] || ex.equipment) + '</span></li>';
       }).join('') : '<li class="muted">Keine Treffer.</li>') + '</ul>' +
@@ -729,7 +766,9 @@
   function viewExercise(id) {
     var ex = S.byId[id];
     if (!ex) return viewLibrary();
-    var html = '<div class="card"><h2>' + esc(ex.name) + '</h2>' +
+    var instr = exInstructions(ex);
+    var html = '<div class="card"><h2>' + esc(exName(id)) + '</h2>' +
+      (ex.de ? '<p class="muted small">' + esc(ex.name) + '</p>' : '') +
       '<p class="muted small">' +
       esc((ex.primaryMuscles || []).map(function (m) { return DB_MUSCLE_DE[m] || m; }).join(', ')) +
       ' · ' + esc(EQUIP_DE[ex.equipment] || ex.equipment) +
@@ -737,8 +776,10 @@
       (ex.secondaryMuscles && ex.secondaryMuscles.length
         ? '<p class="muted small">Sekundär: ' + esc(ex.secondaryMuscles.map(function (m) { return DB_MUSCLE_DE[m] || m; }).join(', ')) + '</p>' : '') +
       '</div>' +
-      '<div class="card"><h3>Ausführung</h3><ol class="instructions">' +
-      (ex.instructions || []).map(function (t) { return '<li>' + esc(t) + '</li>'; }).join('') +
+      '<div class="card"><h3>Ausführung' + (instr.en ? ' <span class="badge badge-sm">EN</span>' : '') + '</h3>' +
+      (instr.en ? '<p class="muted small">Für diese Übung liegt noch keine deutsche Anleitung vor.</p>' : '') +
+      '<ol class="instructions">' +
+      instr.steps.map(function (t) { return '<li>' + esc(t) + '</li>'; }).join('') +
       '</ol></div>' +
       '<button class="btn btn-ghost" onclick="history.back()">← Zurück</button>';
     shell('Übung', html, '#library');
@@ -827,7 +868,7 @@
 
   window.App = {
     login: login, register: register, logout: logout,
-    genSet: genSet, genRun: genRun,
+    genSet: genSet, genToggle: genToggle, genRun: genRun,
     startWorkout: startWorkout, resumeWorkout: resumeWorkout, discardWorkout: discardWorkout,
     logSet: logSet, finishWorkout: finishWorkout,
     progressPick: progressPick, libSearch: libSearch, libMuscle: libMuscle,
